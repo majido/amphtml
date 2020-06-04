@@ -44,14 +44,7 @@ export class ScrollTimelineWorkletRunner extends AnimationRunner {
     /** @protected {?Array<!WorkletAnimation>} */
     this.players_ = [];
 
-    /** @private {number} */
-    this.startScrollOffset_ = viewportData['start-scroll-offset'];
-
-    /** @private {number} */
-    this.endScrollOffset_ = viewportData['end-scroll-offset'];
-
-    /** @private {number} */
-    this.initialInViewPercent_ = viewportData['initial-inview-percent'];
+    this.scene_ = viewportData['scene'];
   }
 
   /**
@@ -65,44 +58,27 @@ export class ScrollTimelineWorkletRunner extends AnimationRunner {
     const scrollSource = viewportService.getScrollingElement();
 
     const timeRange = getTotalDuration(this.requests_);
-    const adjustedTimeRange = (1 - this.initialInViewPercent_) * timeRange;
-    const initialElementOffset = this.initialInViewPercent_ * timeRange;
-
     this.requests_.map((request) => {
       // Apply vars.
       if (request.vars) {
         setStyles(request.target, assertDoesNotContainDisplay(request.vars));
       }
-      getOrAddWorkletModule(this.win_).then(
-        () => {
-          const scrollTimeline = new this.win_.ScrollTimeline({
-            scrollSource,
-            orientation: 'block',
-            startScrollOffset: `${px(this.startScrollOffset_)}`,
-            endScrollOffset: `${px(this.endScrollOffset_)}`,
-            timeRange: adjustedTimeRange,
-            fill: 'both',
-          });
-          const keyframeEffect = new KeyframeEffect(
-            request.target,
-            request.keyframes,
-            /** @type {AnimationEffectTimingProperties} */ (request.timing)
-          );
-          const player = new this.win_.WorkletAnimation(
-            `${moduleName}`,
-            [keyframeEffect],
-            scrollTimeline,
-            {
-              'initial-element-offset': initialElementOffset,
-            }
-          );
-          player.play();
-          this.players_.push(player);
-        },
-        (e) => {
-          dev().error('AMP-ANIMATION', e);
-        }
+      const scrollTimeline = new this.win_.ScrollTimeline({
+        scrollSource,
+        orientation: 'block',
+        startScrollOffset: {target: this.scene_, edge: 'end', threshold: 0},
+        endScrollOffset: {target: this.scene_, edge: 'start', threshold: 0},
+        timeRange,
+        fill: 'both',
+      });
+      const keyframeEffect = new KeyframeEffect(
+        request.target,
+        request.keyframes,
+        /** @type {AnimationEffectTimingProperties} */ (request.timing)
       );
+      const player = new this.win_.Animation(keyframeEffect, scrollTimeline);
+      player.play();
+      this.players_.push(player);
     });
   }
 
@@ -128,36 +104,4 @@ export class ScrollTimelineWorkletRunner extends AnimationRunner {
       player.cancel();
     });
   }
-}
-
-/**
- * @param {!Window} win
- * @private
- * @return {*} TODO(#23582): Specify return type
- */
-function getOrAddWorkletModule(win) {
-  if (workletModulePromise) {
-    return workletModulePromise;
-  }
-  const blob = `registerAnimator('${moduleName}', class {
-    constructor(options = {
-      'current-element-offset': 0
-    }) {
-      console/*OK*/.info('Using animationWorklet ScrollTimeline');
-      this.initialElementOffset_ = options['initial-element-offset'];
-    }
-    animate(currentTime, effect) {
-      if (currentTime == NaN) {
-        return;
-      }
-      effect.localTime = currentTime + this.initialElementOffset_;
-    }
-  });
-  `;
-
-  workletModulePromise = win.CSS.animationWorklet.addModule(
-    URL.createObjectURL(new Blob([blob], {type: 'text/javascript'}))
-  );
-
-  return workletModulePromise;
 }

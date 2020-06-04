@@ -173,6 +173,7 @@ export class AmpVisibilityObserver extends AMP.BaseElement {
       'start-scroll-offset': scrolltop,
       'end-scroll-offset': scrolltop + this.remainingScrollToExit_,
       'initial-inview-percent': this.scrollProgress_,
+      'scene': this.discoverScene_(),
     });
     const name = 'scroll';
     const event = createCustomEvent(
